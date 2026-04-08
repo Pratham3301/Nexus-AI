@@ -1,0 +1,28 @@
+# Build stage
+FROM node:20-alpine as build
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+# Setting this arg allows injecting the backend URL during build
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+RUN npm run build
+
+# Serve stage
+FROM nginx:alpine
+# Copy the built files
+COPY --from=build /app/dist /usr/share/nginx/html
+# Required config for React Router & Cloud Run ports
+RUN echo 'server { \
+    listen 8080; \
+    location / { \
+        root /usr/share/nginx/html; \
+        index index.html index.htm; \
+        try_files $uri $uri/ /index.html; \
+    } \
+}' > /etc/nginx/conf.d/default.conf
+
+# Modify nginx to read PORT variable given by Cloud Run, if different
+EXPOSE 8080
+CMD sh -c "sed -i 's/listen.*/listen '$PORT';/g' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
